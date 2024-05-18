@@ -1,0 +1,419 @@
+---
+title: "A Data Anaysis of 2009-2010 CSAP Results of 9th Graders"
+author: "Benjamin Javier (110787897)"
+date:  "4/29/2024"
+output: pdf_document
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+#Importing all necessary libraries and getting the necessary data before starting the 5As
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(knitr)
+library(tinytex)
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(out.width = "70%",fig.align = 'center')
+```
+
+\newpage
+
+```{r getting-Data}
+CSAP <- GET("https://data.colorado.gov/resource/44v8-6fzj.json?grade_level=9&subject=READING")
+table1 <- content(CSAP,"text")
+import1 <- fromJSON(table1)
+CSAP2 <- GET("https://data.colorado.gov/resource/44v8-6fzj.json?grade_level=9&subject=WRITING")
+table2 <- content(CSAP2,"text")
+import2 <- fromJSON(table2)
+CSAP3 <- GET("https://data.colorado.gov/resource/44v8-6fzj.json?grade_level=9&subject=MATH")
+table3 <- content(CSAP3,"text")
+import3 <- fromJSON(table3)
+
+#join all 3 tables
+joined1 <- rbind(import1,import2)
+total <- rbind(joined1,import3)
+```
+
+# Ask the Question
+
+  The questions that the data will be used to answer are the following: "Was there truly an improvement in passing rates for the math exam between 2009 and 2010? If so, was there a decline in the performance on the Reading and Writing exams?" Essentially, we must compare the passing rates for the math exam between 2009 and 2010 and determine if it increases over time. Then we must also determine if there was a decrease in passing rates for the reading and writing exams IF the passing rates for math increased.
+  
+  "Was there an association between a school’s passing rate on the math exam and its passing rates on the reading and writing exams? If so, how accurately could math passing rates have been predicted from th reading and writing rates?" In order to come up with an answer based on the data, the data must be wrangled, analyzed, and then after advising on the results, only then can an answer be made on the previous two questions. Therefore, the data set must be wrangled appropriately first.
+  
+# Acquire the Data
+
+```{r wrangling-Data}
+wrangled <- total %>%
+  mutate(schoolNo = as.numeric(school_no), subject1 = as.factor(subject), noScore09 = as.numeric(`_09_not_scored_count`), noScore10 = as.numeric(`_10_not_scored_count`), unsatisfactory09 = as.numeric(`_09_unsatisfactory_count`), unsatisfactory10 = as.numeric(`_10_unsatisfactory_count`), partial09 = as.numeric(`_09_partially_proficient_count`), partial10 = as.numeric(`_10_partially_proficient_count`), prof09 = as.numeric(`_09_proficient_count`), prof10 = as.numeric(`_10_proficient_count`), adv09 = as.numeric(`_09_advanced_count`), adv10 = as.numeric(`_10_advanced_count`), total09 = as.numeric(`_09_total_count`), total10 = as.numeric(`_10_total_count`)) %>%
+  filter(schoolNo > 0,
+         total09 >= 31 & total10 >= 31) %>%
+  select(schoolNo, subject1, noScore09, noScore10, unsatisfactory09, unsatisfactory10, partial09, partial10, prof09, prof10, adv09, adv10) 
+
+
+#JOIN 09 and 10 DATA (separate and use rbind again)
+year2009 <- wrangled %>%
+  transmute(schoolNo, subject1,
+            year = 2009,
+            none = noScore09,
+            unsatisfactory = unsatisfactory09,
+            partial = partial09,
+            proficient = prof09,
+            advanced = adv09)
+
+year2010 <- wrangled %>%
+  transmute(schoolNo, subject1,
+            year = 2010,
+            none = noScore10,
+            unsatisfactory = unsatisfactory10,
+            partial = partial10,
+            proficient = prof10,
+            advanced = adv10)
+
+full <- rbind(year2009,year2010)
+```
+```{r sample}
+school_list <- unique(full$schoolNo)
+
+#set seed
+set.seed(110787897)
+#sample
+my_school_list <- sample(x=school_list,size=120,replace = FALSE)
+
+#filter
+my_schools <- full %>%
+  filter(schoolNo %in% my_school_list)
+```
+  By wrangling the data before sampling, we can ensure a clean and tidy dataset. This allows us to analyze the correct data, ensuring there are no observations that could affect the data analysis in a negative manner. To answer the questions stated in the first A: Ask the Question(s), we can narrow the previous data into the above variables, placing emphasis on the passing rates for each subject (proficient and advanced) and later observing the differences between 2009 and 2010. Doing this will leave us with 720 observations and 8 variables, containing the school No, subject, year, and the number of each proficiency level. This is seen in the below data structure:
+```{r glimpse data}
+glimpse(my_schools)
+```
+
+# Analyze the Data
+  To properly analyze and find the difference in proportion for passing and non passing test results for each subject, we must create other data frames that will split off from the main one into the three respective subjects and filter for the passing and non passing results. In this case, what we are looking at is essentially an exploratory analysis, taking the test results from 2009 and comparing them to 2010 test results. We can do this by creating proportion data for each subject from the wrangled data, taking the difference in passing rates between 2009 and 2010. The mean differences for each can be seen below:
+```{r creating proportion data}
+#Get the rates for 2009, should be a single vector
+writing2009 <- my_schools %>%
+  filter(subject1 == "WRITING",
+         year == 2009) %>%
+  mutate(total = (none+unsatisfactory+partial+proficient+advanced), rate2009 = (proficient+advanced)/total) %>%
+  select(rate2009)
+
+#same for 2010
+writing2010 <- my_schools %>%
+  filter(subject1 == "WRITING",
+         year == 2010) %>%
+  mutate(total = (none+unsatisfactory+partial+proficient+advanced), rate2010 = (proficient+advanced)/total) %>%
+  select(rate2010)
+
+#combine into one data frame
+writing_prop <- my_schools %>%
+  filter(subject1 == "WRITING") %>%
+  select(schoolNo)
+
+writing_prop <- cbind(writing_prop,writing2009)
+writing_prop <- cbind(writing_prop,writing2010)
+
+writing_prop <- writing_prop %>%
+  mutate(diff = rate2010 - rate2009)
+
+# mean(writing_prop$diff)
+#Get the rates for 2009, should be a single vector
+math2009 <- my_schools %>%
+  filter(subject1 == "MATH",
+         year == 2009) %>%
+  mutate(total = (none+unsatisfactory+partial+proficient+advanced), rate2009 = (proficient+advanced)/total) %>%
+  select(rate2009)
+
+#same for 2010
+math2010 <- my_schools %>%
+  filter(subject1 == "MATH",
+         year == 2010) %>%
+  mutate(total = (none+unsatisfactory+partial+proficient+advanced), rate2010 = (proficient+advanced)/total) %>%
+  select(rate2010)
+
+#combine into one data frame
+math_prop <- my_schools %>%
+  filter(subject1 == "MATH") %>%
+  select(schoolNo)
+
+math_prop <- cbind(math_prop,math2009)
+math_prop <- cbind(math_prop,math2010)
+
+math_prop <- math_prop %>%
+  mutate(diff = rate2010 - rate2009)
+# mean(math_prop$diff)
+#Get the rates for 2009, should be a single vector
+reading2009 <- my_schools %>%
+  filter(subject1 == "READING",
+         year == 2009) %>%
+  mutate(total = (none+unsatisfactory+partial+proficient+advanced), rate2009 = (proficient+advanced)/total) %>%
+  select(rate2009)
+
+#same for 2010
+reading2010 <- my_schools %>%
+  filter(subject1 == "READING",
+         year == 2010) %>%
+  mutate(total = (none+unsatisfactory+partial+proficient+advanced), rate2010 = (proficient+advanced)/total) %>%
+  select(rate2010)
+
+#combine into one data frame
+reading_prop <- my_schools %>%
+  filter(subject1 == "READING") %>%
+  select(schoolNo)
+
+reading_prop <- cbind(reading_prop,reading2009)
+reading_prop <- cbind(reading_prop,reading2010)
+
+reading_prop <- reading_prop %>%
+  mutate(diff = rate2010 - rate2009)
+#mean(reading_prop$diff)
+```
+  Writing mean difference: `r mean(writing_prop$diff)*100`%, Math mean difference: `r mean(math_prop$diff)*100`%, Reading mean difference: `r mean(reading_prop$diff)*100`%. The mean differences seem to suggest that the writing passing rates decreased by 3%, the math passing rates increased by 3% and the reading passing rates increased by 0.04%, or even no real change at all. However, all three of these values are point estimates, so we must create the respective confidence interval for each subject's passing rate. We will go in with a 95% confidence interval. We can then analyze and observe the changes through each respective plot.
+```{r confidence-intervals}
+#reading bootstrap
+reading_boot <- data.frame(prop=rep(NA,1000))
+
+for(i in 1:1000)
+{
+  reading_boot$prop[i] <- mean(sample(x = reading_prop$diff,
+                                      size = nrow(reading_prop),
+                                      replace = TRUE))
+}
+
+math_boot <- data.frame(prop = rep(NA,1000))
+for(i in 1:1000){
+  math_boot$prop[i] <- mean(sample(x = math_prop$diff,
+                                   size = nrow(math_prop),
+                                   replace = TRUE))
+}
+
+writing_boot <- data.frame(prop = rep(NA,1000))
+
+for(i in 1:1000){
+  writing_boot$prop[i] <- mean(sample(x = writing_prop$diff,
+                               size = nrow(writing_prop),
+                               replace = TRUE))
+}
+
+writing_ci <- ggplot(data = writing_boot, aes(x = prop)) +
+  geom_histogram(color = "black", fill = "skyblue", bins = 20) +
+  geom_vline(xintercept = quantile(writing_boot$prop,0.025),
+             color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = quantile(writing_boot$prop, 0.975),
+             color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Colorado Student Assessment Program (CSAP)",
+       subtitle = "9th Grade Writing (95% confidence bounds)",
+       x = "Mean Difference in Passing Rate (from 2009 to 2010)",
+       y = "Count",
+       caption = "source: CDE") +
+  theme_bw()
+
+reading_ci <- ggplot(data = reading_boot, aes(x = prop)) +
+  geom_histogram(color = "black", fill = "skyblue", bins = 20) +
+  geom_vline(xintercept = quantile(reading_boot$prop,0.025),
+             color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = quantile(reading_boot$prop, 0.975),
+             color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Colorado Student Assessment Program (CSAP)",
+       subtitle = "9th Grade Reading (95% confidence bounds)",
+       x = "Mean Difference in Passing Rate (from 2009 to 2010)",
+       y = "Count",
+       caption = "source: CDE") +
+  theme_bw()
+
+math_ci <- ggplot(data = math_boot, aes(x = prop)) +
+  geom_histogram(color = "black", fill = "skyblue", bins = 20) +
+  geom_vline(xintercept = quantile(math_boot$prop,0.025),
+             color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = quantile(math_boot$prop, 0.975),
+             color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = "Colorado Student Assessment Program (CSAP)",
+       subtitle = "9th Grade Math (95% confidence bounds)",
+       x = "Mean Difference in Passing Rate (from 2009 to 2010)",
+       y = "Count",
+       caption = "source: CDE") +
+  theme_bw()
+```
+```{r writingCi}
+writing_ci
+```
+  Based on the plot for the writing pass rates, it seems that the passing rate for writing decreased between 2009 and 2010. Using the confidence interval bounds, we are 95% confident that the passing rates decreased between `r quantile(writing_boot$prop, 0.025)*100` and `r quantile(writing_boot$prop, 0.975)*100` percentage points respectively between 2009 and 2010 for 9th grade test takers at the average Colorado school.
+
+```{r readingCi}
+reading_ci
+```
+  Based on the plot for the reading pass rates, it seems that there can be no observed difference in the passing rates between 2009 and 2010. This is because zero is included in the confidence interval, suggesting that the pass rates in reading between 2009 and 2010 underwent no real difference.
+
+```{mathCi}
+math_ci
+```
+  Based on the plot for the math pass rates, it seems that the passing rate for math increased between 2009 and 2010. Using the confidence interval bounds, we are 95% confident that the passing rates increased between `r quantile(math_boot$prop, 0.025)*100` and `r quantile(math_boot$prop, 0.975)*100` percentage points respectively between 2009 and 2010 for 9th grade test takers at the average Colorado school.
+
+  Following that exploratory analysis on the data, we can also form some predictive analysis on the data set to predict results based on other subjects. For example, we can take the data from the math passing rates in 2009 and create a line of best fit equation to perdict the reading and writing pass rates given a math pass rate. This is done in the below scatter plots, and its proceeding analyses:
+```{r predictive}
+training <- my_schools %>%
+  filter(year == 2009) %>%
+  select(schoolNo)
+
+training <- cbind(training, math2009)
+training <- training %>%
+  rename("MATH" = rate2009)
+training <- cbind(training, reading2009)
+training <- training %>%
+  rename("READING" = rate2009)
+training <- cbind(training, writing2009)
+training <- training %>%
+  rename("WRITING" = rate2009)
+
+writingtoReading <- ggplot(training, aes(x = WRITING, y = READING, color = schoolNo)) +
+  geom_point(show.legend = FALSE) +
+  geom_smooth(method = lm, formula = y~x, se = FALSE, color = "red") +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  labs(title = "Colorado Student Assessment Program(CSAP)",
+       subtitle = "9th Grade Writing vs Reading (2009)",
+       x = "Passing Rate (Writing)",
+       y = "Passing Rate (Reading)",
+       caption = "Source: CDE") +
+  theme_bw()
+
+writingtoMath <- ggplot(training, aes(x = WRITING, y = MATH, color = schoolNo)) +
+  geom_point(show.legend = FALSE) +
+  geom_smooth(method = lm, formula = y~x, se = FALSE, color = "red") +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  labs(title = "Colorado Student Assessment Program(CSAP)",
+       subtitle = "9th Grade Writing vs Math (2009)",
+       x = "Passing Rate (Writing)",
+       y = "Passing Rate (Math)",
+       caption = "Source: CDE") +
+  theme_bw()
+
+readingtoWriting <- ggplot(training, aes(x = READING, y = WRITING, color = schoolNo)) +
+  geom_point(show.legend = FALSE) +
+  geom_smooth(method = lm, formula = y~x, se = FALSE, color = "red") +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  labs(title = "Colorado Student Assessment Program(CSAP)",
+       subtitle = "9th Grade Reading vs Writing (2009)",
+       x = "Passing Rate (Reading)",
+       y = "Passing Rate (Writing)",
+       caption = "Source: CDE") +
+  theme_bw()
+
+readingtoMath <- ggplot(training, aes(x = READING, y = MATH, color = schoolNo)) +
+  geom_point(show.legend = FALSE) +
+  geom_smooth(method = lm, formula = y~x, se = FALSE, color = "red") +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  labs(title = "Colorado Student Assessment Program(CSAP)",
+       subtitle = "9th Grade Reading vs Math (2009)",
+       x = "Passing Rate (Reading)",
+       y = "Passing Rate (Math)",
+       caption = "Source: CDE") +
+  theme_bw()
+
+mathtoReading <- ggplot(training, aes(x = MATH, y = READING, color = schoolNo)) +
+  geom_point(show.legend = FALSE) +
+  geom_smooth(method = lm, formula = y~x, se = FALSE, color = "red") +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  labs(title = "Colorado Student Assessment Program(CSAP)",
+       subtitle = "9th Grade Math vs Reading (2009)",
+       x = "Passing Rate (Math)",
+       y = "Passing Rate (Reading)",
+       caption = "Source: CDE") +
+  theme_bw()
+
+mathtoWriting <- ggplot(training, aes(x = MATH, y = WRITING, color = schoolNo)) +
+  geom_point(show.legend = FALSE) +
+  geom_smooth(method = lm, formula = y~x, se = FALSE, color = "red") +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  labs(title = "Colorado Student Assessment Program(CSAP)",
+       subtitle = "9th Grade Math vs Writing (2009)",
+       x = "Passing Rate (Math)",
+       y = "Passing Rate (Writing)",
+       caption = "Source: CDE") +
+  theme_bw()
+
+#get all 6 RMSE
+testing <- my_schools %>%
+  filter(year == 2010) %>%
+  select(schoolNo)
+
+testing <- cbind(testing, math2010)
+testing <- testing %>%
+  rename("MATH" = rate2010)
+testing <- cbind(testing, reading2010)
+testing <- testing %>%
+  rename("READING" = rate2010)
+testing <- cbind(testing, writing2010) 
+testing <- testing %>%
+  rename("WRITING" = rate2010)
+
+model1 <- lm(READING~WRITING,data = training)
+model2 <- lm(MATH~WRITING,data = training)
+model3 <- lm(READING~MATH,data = training)
+model4 <- lm(WRITING~MATH,data = training)
+model5 <- lm(MATH~READING,data = training)
+model6 <- lm(WRITING~READING,data = training)
+
+testing_pred <- testing %>%
+  mutate(pred_writingtoReading = predict(model1,newdata=testing),
+         pred_writingtoMath = predict(model2, newdata = testing),
+         pred_mathtoReading = predict(model3, newdata = testing),
+         pred_mathtoWriting = predict(model4, newdata = testing),
+         pred_readingtoMath = predict(model5, newdata = testing),
+         pred_readingtoWriting = predict(model6, newdata = testing))
+RMSE1 <- testing_pred %>%
+  summarize(RMSE = sqrt(mean((READING-pred_writingtoReading)^2)))
+RMSE2 <- testing_pred %>%
+  summarize(RMSE = sqrt(mean((MATH-pred_writingtoMath)^2)))
+RMSE3 <- testing_pred %>%
+  summarize(RMSE = sqrt(mean((READING-pred_mathtoReading)^2)))
+RMSE4 <- testing_pred %>%
+  summarize(RMSE = sqrt(mean((WRITING-pred_mathtoWriting)^2)))
+RMSE5 <- testing_pred %>%
+  summarize(RMSE = sqrt(mean((MATH-pred_readingtoMath)^2)))
+RMSE6 <- testing_pred %>%
+  summarize(RMSE = sqrt(mean((WRITING-pred_readingtoWriting)^2)))
+```
+
+```{r graph-3}
+mathtoReading
+```
+  In the above graph we can see that the graph's intercept is above 0, so students tend to pass more on the reading test than on the math test. We can also see that the correlation can be described as linear, increasing and strong. This is further supported by the correlation coefficient: `r cor(training$MATH,training$READING,method = "pearson")`. The regression equation is seen below:
+$$
+READING = 0.3806 + 0.8442\cdot MATH
+$$
+
+  In the above equation, we observe that the intercept is greater than 0 and the slope is less than one. That means that students typically perform better in the reading exams than in math, and as the passing rates for math increase, the gap between reading and math pass rates will decrease. This makes sense logically as students will typically cover all subjects of a test to feel better prepared for the overall exam.
+
+```{r RMSE3}
+RMSE3
+```
+This value says that if we are given a math passing rate, we can predict the reading passing rate to be within `r RMSE3$RMSE*100` percentage points.
+
+```{r graph-4}
+mathtoWriting
+```
+  In the above graph, we observe results that are relatively similar to that of the previous graph, in that the correlation is strong, positive and linear, seen with `r cor(training$MATH,training$WRITING,method = "pearson")`. Again, as is the case with the Math vs Reading graph, we can observe that the intercept for the line of best fit is clearly above 0, therefore we can say that students tend to do better on the writing test than on the math test. This is seen in the below equation:
+$$
+WRITING = 0.1901 + 0.9534\cdot MATH
+$$
+
+  In the equation, we also observe that the slope is less than one, so we can say that as the pass rates for math increase, the gap between the writing and math pass rates will decrease. Next, we can find the RMSE value in order to analyze the accuracy of the above model. The RMSE is given below:
+```{r RMSE4}
+RMSE4
+```
+This value above essentially means that given a math passing rate, we can predict a writing passing rate within `r RMSE4$RMSE*100` percentage points.
+\newpage
+
+# Advise on Results
+  In the first half of the previous section, we were able to observe a roughly 3% increase in math pass rates between 2009 and 2010 for 9th grade students taking the CSAP exam. We were also able to observe a roughly 3% decrease however in writing pass rates between 2009 and 2010 for the same data set. Lastly, we were unable to observe an increase nor a decrease in reading pass rates between 2009 and 2010 for the data set. This allows us to answer the first question based on the results, in that there was an observed increase in the pass rates for the math exam, however writing pass rates decreased while reading pass rates stayed relatively the same. 
+  
+  In the second half of the previous section we were able to create predictive equations that would let us predict the reading and writing pass rates given a math pass rate. We observed that students typically tend to do better in writing and reading than they do in math, however as the pass rates for math increase, the gap between math pass rates and writing/reading pass rates will decrease. Afterwards, we were able to determine an accuracy value for which the average difference between the actual and predicted value will be. This is roughly 10 percentage points for both predictive equations, but we can expect that when making a prediction, the difference, on average, will be within 10 percentage points.
+
+# Answer the Question
+  Using the results from the data, we can finally answer the questions asked by the administrators, which were established at the very beginning, before we even acquired the data. The first question asked wanted us to observe whether there was an improvement in passing rates for the math exam between 2009 and 2010, and if so, if there as a decline in performance on the reading and writing exams. Using the results from the exploratory analysis, in the confidence intervals for each subject, we observed a roughly 3% increase in math exam pass rates. To be more specific however, we are 95% confident that the math exam pass rates increased between 2.7%-4.8% between 2009 and 2010. This allows us to move onto the second part of the question, which wants us to observe if the writing or reading exam pass rates decreased between 2009 and 2010. For the reading exam pass rates, we observe no change between 2009 and 2010. This is because when taking the 95% confidence interval for the reading pass rates, we found 0 to be within the confidence interval. Therefore, we are 95% confident that the reading pass rates underwent no change between 2009 and 2010. However, for writing exam pass rates we observe a decrease in roughly 3% in the pass rates. More specifically, we are 95% confident that the writing exam pass rates decreased between 2.3%-4.5% between 2009 and 2010. This allows us to answer the question as a whole, that based on the observed confidence intervals, we observe that math exam pass rates increased between 2009 and 2010, while reading pass rates had no change and writing pass rates decreased between 2009 and 2010.
+
+  To answer the second question, which asked us to observe if there was an association between a school's passing rate on the math exam and the passing rates on the reading and writing exams. Following that, the administrators want us to determine the accuracy of this association, given that we can predict the passing rates with a line of best fit. To find the answer to this question, we can apply methods of predictive analysis, seen in the second half of the analysis section. We created two scatter plots and two lines of best fit equations to create a predictive model on the passing rates in reading and writing given a math pass rate. In both graphs, we were able to observe a strong, linear, and positive correlation, a positive intercept in both, and a slope of less than one in both. This tells us that students tend to pass reading and writing more than math, and that as the math pass rates increase, the gap between reading/writing pass rates and math pass rates will decrease. Furthermore, we were able to give our predictive models an accuracy value by calculating an RMSE for both. In the RMSE we observed a value of roughly 0.10 for both, or 10 percentage points. That means that given a math pass rate, we can observe on average our model to predict the writing and reading pass rates to be accurate within 10 percentage points.
